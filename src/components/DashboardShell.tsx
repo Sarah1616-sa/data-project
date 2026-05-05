@@ -50,7 +50,7 @@ export default function DashboardShell({
   const RoleIcon = roleIcons[role]
 
   return (
-    <main className="dashboard-shell">
+    <main className="dashboard-shell" data-role={role}>
       <aside className="sidebar">
         <div className="brand-lockup">
           <span className="brand-mark">EC</span>

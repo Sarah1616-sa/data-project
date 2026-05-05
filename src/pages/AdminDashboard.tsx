@@ -1,12 +1,17 @@
-import { useState } from 'react'
-import { Activity, AlertTriangle, MonitorCheck, ShieldCheck } from 'lucide-react'
+import { useState, type ReactNode } from 'react'
+import { Activity, AlertTriangle, ClipboardList, MonitorCheck, ShieldCheck } from 'lucide-react'
+import type { AdminLog, Report, ReportStatus, Session } from '../App'
 import DashboardShell from '../components/DashboardShell'
 import { DataTable, StatusPill } from '../components/DataTable'
 import MetricCard from '../components/MetricCard'
 import Panel from '../components/Panel'
 
 type AdminDashboardProps = {
+  adminLogs: AdminLog[]
+  reports: Report[]
+  sessions: Session[]
   onSignOut: () => void
+  onUpdateReportStatus: (reportId: string, status: ReportStatus, note: string) => void
 }
 
 type AdminPage = 'dashboard' | 'manageReports' | 'adminLogs' | 'sessions'
@@ -20,96 +25,42 @@ const adminNavigation: Array<{ id: AdminPage; label: string }> = [
 
 const pageCopy: Record<AdminPage, { title: string; subtitle: string }> = {
   dashboard: {
-    title: 'Dashboard',
-    subtitle: 'Platform moderation, sessions, and audit activity.',
+    title: 'Admin Dashboard',
+    subtitle: 'Report moderation, audit logs, and user session visibility.',
   },
   manageReports: {
     title: 'Manage Reports',
-    subtitle: 'Triage customer and store owner reports.',
+    subtitle: 'Handle customer reports and update their front-end status.',
   },
   adminLogs: {
     title: 'Admin Logs',
-    subtitle: 'Review moderation and system audit events.',
+    subtitle: 'Track admin actions taken on reports.',
   },
   sessions: {
     title: 'Sessions',
-    subtitle: 'Monitor active account sessions and access status.',
+    subtitle: 'Review sample user sessions from mock data.',
   },
 }
 
-const reports = [
-  {
-    id: 'RPT-700',
-    source: 'Customer',
-    subject: 'Payment dispute',
-    priority: 'High',
-    status: 'Open',
-  },
-  {
-    id: 'RPT-699',
-    source: 'Store Owner',
-    subject: 'Duplicate listing',
-    priority: 'Medium',
-    status: 'Review',
-  },
-  {
-    id: 'RPT-693',
-    source: 'Customer',
-    subject: 'Refund confirmation',
-    priority: 'Low',
-    status: 'Resolved',
-  },
-]
+function reportTone(status: Report['status']) {
+  if (status === 'Resolved') {
+    return 'green'
+  }
 
-const sessions = [
-  {
-    id: 'SES-91',
-    user: 'mona@example.com',
-    role: 'Customer',
-    device: 'Chrome / Windows',
-    status: 'Active',
-  },
-  {
-    id: 'SES-88',
-    user: 'owner@example.com',
-    role: 'Store Owner',
-    device: 'Safari / iOS',
-    status: 'Active',
-  },
-  {
-    id: 'SES-84',
-    user: 'admin@example.com',
-    role: 'Admin',
-    device: 'Edge / Windows',
-    status: 'Flagged',
-  },
-]
+  if (status === 'Rejected') {
+    return 'red'
+  }
 
-const adminLogs = [
-  {
-    id: 'LOG-502',
-    actor: 'Admin A.',
-    action: 'Resolved report RPT-693',
-    time: '10:42',
-    result: 'Completed',
-  },
-  {
-    id: 'LOG-501',
-    actor: 'Admin B.',
-    action: 'Reviewed session SES-84',
-    time: '10:21',
-    result: 'Follow-up',
-  },
-  {
-    id: 'LOG-498',
-    actor: 'Admin A.',
-    action: 'Exported report queue',
-    time: '09:55',
-    result: 'Completed',
-  },
-]
+  return status === 'In Progress' ? 'amber' : 'blue'
+}
 
-export default function AdminDashboard({ onSignOut }: AdminDashboardProps) {
+export default function AdminDashboard({
+  adminLogs,
+  reports,
+  sessions,
+  onSignOut,
+  onUpdateReportStatus,
+}: AdminDashboardProps) {
   const [activePage, setActivePage] = useState<AdminPage>('dashboard')
   const copy = pageCopy[activePage]
 
@@ -123,68 +74,221 @@ export default function AdminDashboard({ onSignOut }: AdminDashboardProps) {
       subtitle={copy.subtitle}
       title={copy.title}
     >
-      {activePage === 'dashboard' ? <AdminOverviewPage /> : null}
-      {activePage === 'manageReports' ? <ManageReportsPage /> : null}
-      {activePage === 'adminLogs' ? <AdminLogsPage /> : null}
-      {activePage === 'sessions' ? <SessionsPage /> : null}
+      {activePage === 'dashboard' ? (
+        <AdminOverviewPage
+          adminLogs={adminLogs}
+          onNavigate={setActivePage}
+          reports={reports}
+          sessions={sessions}
+        />
+      ) : null}
+      {activePage === 'manageReports' ? (
+        <ManageReportsPage onUpdateReportStatus={onUpdateReportStatus} reports={reports} />
+      ) : null}
+      {activePage === 'adminLogs' ? <AdminLogsPage adminLogs={adminLogs} /> : null}
+      {activePage === 'sessions' ? <SessionsPage sessions={sessions} /> : null}
     </DashboardShell>
   )
 }
 
-function AdminOverviewPage() {
+function AdminOverviewPage({
+  reports,
+  adminLogs,
+  sessions,
+  onNavigate,
+}: {
+  reports: Report[]
+  adminLogs: AdminLog[]
+  sessions: Session[]
+  onNavigate: (page: AdminPage) => void
+}) {
+  const openReports = reports.filter((report) => report.status === 'Open')
+  const inProgressReports = reports.filter((report) => report.status === 'In Progress')
+  const resolvedReports = reports.filter((report) => report.status === 'Resolved')
+
   return (
     <section className="single-page">
       <section className="metric-grid" aria-label="Admin summary">
         <MetricCard
-          detail="Three high priority"
+          detail="Needs admin review"
           icon={<AlertTriangle aria-hidden="true" size={20} />}
           label="Open Reports"
-          value="7"
+          value={String(openReports.length)}
         />
         <MetricCard
-          detail="Across all roles"
-          icon={<MonitorCheck aria-hidden="true" size={20} />}
-          label="Sessions"
-          value="31"
+          detail="Currently being handled"
+          icon={<ClipboardList aria-hidden="true" size={20} />}
+          label="In Progress"
+          value={String(inProgressReports.length)}
         />
         <MetricCard
-          detail="Audit entries today"
-          icon={<Activity aria-hidden="true" size={20} />}
-          label="Admin Logs"
-          value="124"
-        />
-        <MetricCard
-          detail="Two stores in review"
+          detail="Closed successfully"
           icon={<ShieldCheck aria-hidden="true" size={20} />}
-          label="Verification"
-          value="18"
+          label="Resolved"
+          value={String(resolvedReports.length)}
+        />
+        <MetricCard
+          detail="All submitted reports"
+          icon={<Activity aria-hidden="true" size={20} />}
+          label="Total Reports"
+          value={String(reports.length)}
         />
       </section>
 
+      <Panel eyebrow="Shortcuts" title="Quick Actions">
+        <div className="quick-actions">
+          <button className="quick-action" onClick={() => onNavigate('manageReports')} type="button">
+            <AlertTriangle aria-hidden="true" size={20} />
+            <span>Manage Reports</span>
+          </button>
+          <button className="quick-action" onClick={() => onNavigate('adminLogs')} type="button">
+            <Activity aria-hidden="true" size={20} />
+            <span>View Logs</span>
+          </button>
+          <button className="quick-action" onClick={() => onNavigate('sessions')} type="button">
+            <MonitorCheck aria-hidden="true" size={20} />
+            <span>Track Sessions</span>
+          </button>
+        </div>
+      </Panel>
+
       <section className="content-grid compact-grid">
-        <Panel eyebrow="Moderation" title="Open Reports">
-          <ReportsTable rows={reports.slice(0, 2)} />
+        <Panel eyebrow="Audit" title="Recent Logs">
+          <DataTable
+            columns={[
+              { header: 'Log', cell: (log) => log.id },
+              { header: 'Report', cell: (log) => log.reportId },
+              { header: 'Action', cell: (log) => log.action },
+              { header: 'Time', cell: (log) => log.timestamp },
+            ]}
+            rowKey={(log) => log.id}
+            rows={adminLogs.slice(0, 3)}
+          />
         </Panel>
 
-        <Panel eyebrow="Access" title="Flagged Sessions">
-          <SessionsTable rows={sessions.filter((session) => session.status === 'Flagged')} />
+        <Panel eyebrow="Responsibilities" title="Administrator Responsibilities">
+          <ul className="responsibility-list">
+            <li>Review customer-submitted reports and update their status.</li>
+            <li>Keep an audit trail for all report handling decisions.</li>
+            <li>Monitor active and completed user sessions.</li>
+            <li>Coordinate with store owners when reports need follow-up.</li>
+          </ul>
+          <p className="session-count">{sessions.length} mock sessions available for review.</p>
         </Panel>
       </section>
     </section>
   )
 }
 
-function ManageReportsPage() {
+function ManageReportsPage({
+  reports,
+  onUpdateReportStatus,
+}: {
+  reports: Report[]
+  onUpdateReportStatus: (reportId: string, status: ReportStatus, note: string) => void
+}) {
+  const [activeReport, setActiveReport] = useState<Report | null>(null)
+
   return (
     <section className="single-page">
       <Panel eyebrow="Moderation" title="Manage Reports">
-        <ReportsTable rows={reports} />
+        <DataTable
+          columns={[
+            { header: 'Report ID', cell: (report) => report.id },
+            { header: 'Customer', cell: (report) => report.customer },
+            { header: 'Store', cell: (report) => report.storeName },
+            { header: 'Issue', cell: (report) => report.issue },
+            {
+              header: 'Status',
+              cell: (report) => <StatusPill tone={reportTone(report.status)}>{report.status}</StatusPill>,
+            },
+            { header: 'Date', cell: (report) => report.date },
+            {
+              header: 'Action',
+              cell: (report) => (
+                <button className="table-action" onClick={() => setActiveReport(report)} type="button">
+                  Handle
+                </button>
+              ),
+            },
+          ]}
+          rowKey={(report) => report.id}
+          rows={reports}
+        />
       </Panel>
+
+      {activeReport ? (
+        <HandleReportModal
+          onClose={() => setActiveReport(null)}
+          onSubmit={(status, note) => {
+            onUpdateReportStatus(activeReport.id, status, note)
+            setActiveReport(null)
+          }}
+          report={activeReport}
+        />
+      ) : null}
     </section>
   )
 }
 
-function AdminLogsPage() {
+function HandleReportModal({
+  report,
+  onSubmit,
+  onClose,
+}: {
+  report: Report
+  onSubmit: (status: ReportStatus, note: string) => void
+  onClose: () => void
+}) {
+  const [status, setStatus] = useState<ReportStatus>(
+    report.status === 'Open' ? 'In Progress' : report.status,
+  )
+  const [note, setNote] = useState(`Handled ${report.id}`)
+
+  return (
+    <Modal title={`Handle ${report.id}`} onClose={onClose}>
+      <form
+        className="prototype-form"
+        onSubmit={(event) => {
+          event.preventDefault()
+          onSubmit(status, note)
+        }}
+      >
+        <div className="modal-summary">
+          <span>{report.customer}</span>
+          <strong>{report.storeName}</strong>
+          <p>{report.issue}</p>
+        </div>
+        <label className="field" htmlFor="report-status">
+          <span>Status</span>
+          <select
+            id="report-status"
+            onChange={(event) => setStatus(event.target.value as ReportStatus)}
+            value={status}
+          >
+            <option value="In Progress">In Progress</option>
+            <option value="Resolved">Resolved</option>
+            <option value="Rejected">Rejected</option>
+          </select>
+        </label>
+        <label className="field" htmlFor="report-note">
+          <span>Admin Note</span>
+          <textarea
+            id="report-note"
+            onChange={(event) => setNote(event.target.value)}
+            rows={4}
+            value={note}
+          />
+        </label>
+        <button className="primary-button" type="submit">
+          Save Report Action
+        </button>
+      </form>
+    </Modal>
+  )
+}
+
+function AdminLogsPage({ adminLogs }: { adminLogs: AdminLog[] }) {
   return (
     <section className="single-page">
       <Panel eyebrow="Audit" title="Admin Logs">
@@ -192,16 +296,9 @@ function AdminLogsPage() {
           columns={[
             { header: 'Log', cell: (log) => log.id },
             { header: 'Actor', cell: (log) => log.actor },
+            { header: 'Report', cell: (log) => log.reportId },
             { header: 'Action', cell: (log) => log.action },
-            { header: 'Time', cell: (log) => log.time },
-            {
-              header: 'Result',
-              cell: (log) => (
-                <StatusPill tone={log.result === 'Completed' ? 'green' : 'amber'}>
-                  {log.result}
-                </StatusPill>
-              ),
-            },
+            { header: 'Time', cell: (log) => log.timestamp },
           ]}
           rowKey={(log) => log.id}
           rows={adminLogs}
@@ -211,73 +308,46 @@ function AdminLogsPage() {
   )
 }
 
-function SessionsPage() {
+function SessionsPage({ sessions }: { sessions: Session[] }) {
   return (
     <section className="single-page">
       <Panel eyebrow="Access" title="Sessions">
-        <SessionsTable rows={sessions} />
+        <DataTable
+          columns={[
+            { header: 'Session ID', cell: (session) => session.id },
+            { header: 'User Type', cell: (session) => session.userType },
+            { header: 'Username', cell: (session) => session.username },
+            { header: 'Login Time', cell: (session) => session.loginTime },
+            { header: 'Logout Time / Status', cell: (session) => session.logoutStatus },
+          ]}
+          rowKey={(session) => session.id}
+          rows={sessions}
+        />
       </Panel>
     </section>
   )
 }
 
-function ReportsTable({ rows }: { rows: typeof reports }) {
+function Modal({
+  title,
+  children,
+  onClose,
+}: {
+  title: string
+  children: ReactNode
+  onClose: () => void
+}) {
   return (
-    <DataTable
-      columns={[
-        { header: 'Report', cell: (report) => report.id },
-        { header: 'Source', cell: (report) => report.source },
-        { header: 'Subject', cell: (report) => report.subject },
-        {
-          header: 'Priority',
-          cell: (report) => (
-            <StatusPill
-              tone={
-                report.priority === 'High'
-                  ? 'red'
-                  : report.priority === 'Medium'
-                    ? 'amber'
-                    : 'neutral'
-              }
-            >
-              {report.priority}
-            </StatusPill>
-          ),
-        },
-        {
-          header: 'Status',
-          cell: (report) => (
-            <StatusPill tone={report.status === 'Resolved' ? 'green' : 'blue'}>
-              {report.status}
-            </StatusPill>
-          ),
-        },
-      ]}
-      rowKey={(report) => report.id}
-      rows={rows}
-    />
-  )
-}
-
-function SessionsTable({ rows }: { rows: typeof sessions }) {
-  return (
-    <DataTable
-      columns={[
-        { header: 'Session', cell: (session) => session.id },
-        { header: 'User', cell: (session) => session.user },
-        { header: 'Role', cell: (session) => session.role },
-        { header: 'Device', cell: (session) => session.device },
-        {
-          header: 'Status',
-          cell: (session) => (
-            <StatusPill tone={session.status === 'Flagged' ? 'red' : 'green'}>
-              {session.status}
-            </StatusPill>
-          ),
-        },
-      ]}
-      rowKey={(session) => session.id}
-      rows={rows}
-    />
+    <div className="modal-backdrop" role="presentation">
+      <section aria-modal="true" className="modal-panel" role="dialog">
+        <div className="modal-header">
+          <h2>{title}</h2>
+          <button className="icon-button" onClick={onClose} type="button">
+            Close
+          </button>
+        </div>
+        {children}
+      </section>
+    </div>
   )
 }
